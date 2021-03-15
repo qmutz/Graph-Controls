@@ -15,7 +15,7 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
     /// <summary>
     /// An IObjectStorageHelper implementation using open extensions on the Graph User for storing key/value pairs.
     /// </summary>
-    public class UserExtensionDataStore : IRoamingSettingsDataStore
+    public class UserExtensionDataStore : BaseRoamingSettingsDataStore
     {
         /// <summary>
         /// Retrieve the value from Graph User extensions and cast the response to the provided type.
@@ -110,17 +110,14 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
         /// <summary>
         /// Gets the cached key value pairs from the internal data store.
         /// </summary>
-        public IDictionary<string, object> Settings => UserExtension?.AdditionalData;
-
-        private readonly IObjectSerializer _serializer;
+        public override IDictionary<string, object> Settings => UserExtension?.AdditionalData;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="UserExtensionDataStore"/> class.
         /// </summary>
         public UserExtensionDataStore(IObjectSerializer objectSerializer, string extensionId, string userId, bool autoSync = false)
+            : base(objectSerializer)
         {
-            _serializer = objectSerializer ?? throw new ArgumentNullException(nameof(objectSerializer));
-
             ExtensionId = extensionId;
             UserId = userId;
             UserExtension = null;
@@ -135,7 +132,7 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
         /// Creates a new roaming settings extension on the Graph User.
         /// </summary>
         /// <returns>The newly created Extension object.</returns>
-        public async Task Create()
+        public override async Task Create()
         {
             UserExtension = await Create(ExtensionId, UserId);
         }
@@ -144,7 +141,7 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
         /// Deletes the roamingSettings extension from the Graph User.
         /// </summary>
         /// <returns>A void task.</returns>
-        public async Task Delete()
+        public override async Task Delete()
         {
             await Delete(ExtensionId, UserId);
             UserExtension = null;
@@ -154,113 +151,25 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
         /// Update the cached user extension.
         /// </summary>
         /// <returns>The freshly synced user extension.</returns>
-        public async Task Sync()
+        public override async Task Sync()
         {
             UserExtension = await GetExtensionForUser(ExtensionId, UserId);
         }
 
         /// <inheritdoc />
-        public bool KeyExists(string key)
-        {
-            return UserExtension.AdditionalData.ContainsKey(key);
-        }
-
-        /// <inheritdoc />
-        public bool KeyExists(string compositeKey, string key)
-        {
-            if (KeyExists(compositeKey))
-            {
-                ApplicationDataCompositeValue composite = (ApplicationDataCompositeValue)Settings[compositeKey];
-                if (composite != null)
-                {
-                    return composite.ContainsKey(key);
-                }
-            }
-
-            return false;
-        }
-
-        /// <inheritdoc />
-        public T Read<T>(string key, T @default = default)
-        {
-            if (!Settings.TryGetValue(key, out object value) || value == null)
-            {
-                return @default;
-            }
-
-            return _serializer.Deserialize<T>((string)value);
-        }
-
-        /// <inheritdoc />
-        public T Read<T>(string compositeKey, string key, T @default = default)
-        {
-            ApplicationDataCompositeValue composite = (ApplicationDataCompositeValue)Settings[compositeKey];
-            if (composite != null)
-            {
-                string value = (string)composite[key];
-                if (value != null)
-                {
-                    return _serializer.Deserialize<T>(value);
-                }
-            }
-
-            return @default;
-        }
-
-        /// <inheritdoc />
-        public void Save<T>(string key, T value)
-        {
-            var type = typeof(T);
-            var typeInfo = type.GetTypeInfo();
-
-            Settings[key] = _serializer.Serialize(value);
-        }
-
-        /// <inheritdoc />
-        public void Save<T>(string compositeKey, IDictionary<string, T> values)
-        {
-            if (KeyExists(compositeKey))
-            {
-                ApplicationDataCompositeValue composite = (ApplicationDataCompositeValue)Settings[compositeKey];
-
-                foreach (KeyValuePair<string, T> setting in values)
-                {
-                    if (composite.ContainsKey(setting.Key))
-                    {
-                        composite[setting.Key] = _serializer.Serialize(setting.Value);
-                    }
-                    else
-                    {
-                        composite.Add(setting.Key, _serializer.Serialize(setting.Value));
-                    }
-                }
-            }
-            else
-            {
-                ApplicationDataCompositeValue composite = new ApplicationDataCompositeValue();
-                foreach (KeyValuePair<string, T> setting in values)
-                {
-                    composite.Add(setting.Key, _serializer.Serialize(setting.Value));
-                }
-
-                Settings[compositeKey] = composite;
-            }
-        }
-
-        /// <inheritdoc />
-        public Task<bool> FileExistsAsync(string filePath)
+        public override Task<bool> FileExistsAsync(string filePath)
         {
             throw new NotImplementedException();
         }
 
         /// <inheritdoc />
-        public Task<T> ReadFileAsync<T>(string filePath, T @default = default)
+        public override Task<T> ReadFileAsync<T>(string filePath, T @default = default)
         {
             throw new NotImplementedException();
         }
 
         /// <inheritdoc />
-        public Task<StorageFile> SaveFileAsync<T>(string filePath, T value)
+        public override Task<StorageFile> SaveFileAsync<T>(string filePath, T value)
         {
             throw new NotImplementedException();
         }
