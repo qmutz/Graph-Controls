@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Graph;
@@ -14,18 +15,14 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
         private static GraphServiceClient Graph => ProviderManager.Instance.GlobalProvider?.Graph;
 
         /// <summary>
-        /// 
+        /// OneDrive will not accept empty files, so we cannot simply create a dummy file.
+        /// Use Update to create a new file with contents.
         /// </summary>
-        /// <param name="fileWithExt"></param>
-        /// <returns></returns>
-        public static async Task Create(string fileWithExt)
+        /// <param name="fileWithExt">The name of the file with extension.</param>
+        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+        public static Task Create(string fileWithExt)
         {
-            var driveItem = new DriveItem()
-            {
-                Name = fileWithExt,
-            };
-
-            await Graph.Me.Drive.Special.AppRoot.ItemWithPath(fileWithExt).Request().CreateAsync(driveItem);
+            throw new NotImplementedException("Cannot create an empty file. Use Update to create a new file with contents.");
         }
 
         /// <summary>
@@ -35,8 +32,11 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         public static async Task<DriveItem> Update<T>(string fileWithExt, T fileContents)
         {
-            var json = Graph.HttpProvider.Serializer.SerializeObject(fileContents);
-            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+            var contents = (fileContents is string stringContents)
+                ? stringContents
+                : Graph.HttpProvider.Serializer.SerializeObject(fileContents);
+
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(contents));
 
             return await Graph.Me.Drive.Special.AppRoot.ItemWithPath(fileWithExt).Content.Request().PutAsync<DriveItem>(stream);
         }
@@ -51,6 +51,18 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
             Stream stream = await Graph.Me.Drive.Special.AppRoot.ItemWithPath(fileWithExt).Content.Request().GetAsync();
 
             return Graph.HttpProvider.Serializer.DeserializeObject<T>(stream);
+        }
+
+        /// <summary>
+        /// Get a file from the remote.
+        /// </summary>
+        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+        public static async Task<string> Retrieve(string fileWithExt)
+        {
+            Stream stream = await Graph.Me.Drive.Special.AppRoot.ItemWithPath(fileWithExt).Content.Request().GetAsync();
+
+            StreamReader reader = new StreamReader(stream);
+            return reader.ReadToEnd();
         }
 
         /// <summary>

@@ -4,9 +4,9 @@
 
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.Graph;
+using Microsoft.Toolkit.Graph.Controls.Common;
 using Microsoft.Toolkit.Uwp.Helpers;
 using Windows.Storage;
 
@@ -15,7 +15,7 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
     /// <summary>
     /// An IObjectStorageHelper implementation using open extensions on the Graph User for storing key/value pairs.
     /// </summary>
-    public class UserExtensionDataStore : BaseRoamingSettingsDataStore
+    public class UserExtensionDataStore : IRoamingSettingsDataStore
     {
         /// <summary>
         /// Retrieve the value from Graph User extensions and cast the response to the provided type.
@@ -93,11 +93,6 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
         }
 
         /// <summary>
-        /// Gets the id of the Graph User extension.
-        /// </summary>
-        public string ExtensionId { get; }
-
-        /// <summary>
         /// Gets the id of the Graph User.
         /// </summary>
         public string UserId { get; }
@@ -110,21 +105,24 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
         /// <summary>
         /// Gets the cached key value pairs from the internal data store.
         /// </summary>
-        public override IDictionary<string, object> Settings => UserExtension?.AdditionalData;
+        public IDictionary<string, object> Settings => UserExtension?.AdditionalData;
+
+        private readonly string _extensionId;
+        private readonly IObjectSerializer _serializer;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="UserExtensionDataStore"/> class.
         /// </summary>
-        public UserExtensionDataStore(IObjectSerializer objectSerializer, string extensionId, string userId, bool autoSync = false)
-            : base(objectSerializer)
+        public UserExtensionDataStore(string extensionId, string userId, IObjectSerializer objectSerializer = null, bool autoSync = false)
         {
-            ExtensionId = extensionId;
+            _serializer = objectSerializer ?? new JsonObjectSerializer();
+            _extensionId = extensionId;
             UserId = userId;
             UserExtension = null;
 
             if (autoSync)
             {
-                _ = Sync();
+                Task.Run(Sync);
             }
         }
 
@@ -132,18 +130,18 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
         /// Creates a new roaming settings extension on the Graph User.
         /// </summary>
         /// <returns>The newly created Extension object.</returns>
-        public override async Task Create()
+        public async Task Create()
         {
-            UserExtension = await Create(ExtensionId, UserId);
+            UserExtension = await Create(_extensionId, UserId);
         }
 
         /// <summary>
         /// Deletes the roamingSettings extension from the Graph User.
         /// </summary>
         /// <returns>A void task.</returns>
-        public override async Task Delete()
+        public async Task Delete()
         {
-            await Delete(ExtensionId, UserId);
+            await Delete(_extensionId, UserId);
             UserExtension = null;
         }
 
@@ -151,25 +149,124 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
         /// Update the cached user extension.
         /// </summary>
         /// <returns>The freshly synced user extension.</returns>
-        public override async Task Sync()
+        public async Task Sync()
         {
-            UserExtension = await GetExtensionForUser(ExtensionId, UserId);
+            UserExtension = await GetExtensionForUser(_extensionId, UserId);
         }
 
         /// <inheritdoc />
-        public override Task<bool> FileExistsAsync(string filePath)
+        public virtual bool KeyExists(string key)
+        {
+            return Settings.ContainsKey(key);
+        }
+
+        /// <inheritdoc />
+        public bool KeyExists(string compositeKey, string key)
+        {
+            if (KeyExists(compositeKey))
+            {
+                ApplicationDataCompositeValue composite = (ApplicationDataCompositeValue)Settings[compositeKey];
+                if (composite != null)
+                {
+                    return composite.ContainsKey(key);
+                }
+            }
+
+            return false;
+        }
+
+        /// <inheritdoc />
+        public T Read<T>(string key, T @default = default)
+        {
+            if (!Settings.TryGetValue(key, out object value) || value == null)
+            {
+                return @default;
+            }
+
+            return _serializer.Deserialize<T>((string)value);
+        }
+
+        /// <inheritdoc />
+        public T Read<T>(string compositeKey, string key, T @default = default)
+        {
+            ApplicationDataCompositeValue composite = (ApplicationDataCompositeValue)Settings[compositeKey];
+            if (composite != null)
+            {
+                string value = (string)composite[key];
+                if (value != null)
+                {
+                    return _serializer.Deserialize<T>(value);
+                }
+            }
+
+            return @default;
+        }
+
+        /// <inheritdoc />
+        public void Save<T>(string key, T value)
+        {
+            // Set the local cache
+            Settings[key] = _serializer.Serialize(value);
+
+            // Send an update to the remote.
+            Task.Run(() => Set(_extensionId, UserId, key, value));
+        }
+
+        /// <inheritdoc />
+        public void Save<T>(string compositeKey, IDictionary<string, T> values)
+        {
+            if (KeyExists(compositeKey))
+            {
+                ApplicationDataCompositeValue composite = (ApplicationDataCompositeValue)Settings[compositeKey];
+
+                foreach (KeyValuePair<string, T> setting in values)
+                {
+                    if (composite.ContainsKey(setting.Key))
+                    {
+                        composite[setting.Key] = _serializer.Serialize(setting.Value);
+                    }
+                    else
+                    {
+                        composite.Add(setting.Key, _serializer.Serialize(setting.Value));
+                    }
+                }
+
+                Settings[compositeKey] = composite;
+                Task.Run(() => Set(_extensionId, UserId, compositeKey, composite));
+            }
+            else
+            {
+                ApplicationDataCompositeValue composite = new ApplicationDataCompositeValue();
+                foreach (KeyValuePair<string, T> setting in values)
+                {
+                    composite.Add(setting.Key, _serializer.Serialize(setting.Value));
+                }
+
+                Settings[compositeKey] = composite;
+                Task.Run(() => Set(_extensionId, UserId, compositeKey, composite));
+            }
+        }
+
+        /// <inheritdoc />
+        public Task<bool> FileExistsAsync(string filePath)
         {
             throw new NotImplementedException();
         }
 
         /// <inheritdoc />
-        public override Task<T> ReadFileAsync<T>(string filePath, T @default = default)
+        public Task<T> ReadFileAsync<T>(string filePath, T @default = default)
         {
             throw new NotImplementedException();
         }
 
         /// <inheritdoc />
-        public override Task<StorageFile> SaveFileAsync<T>(string filePath, T value)
+        public Task<StorageFile> SaveFileAsync<T>(string filePath, T value)
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <inheritdoc />
+        public Task<string> ReadFileAsync(string filePath, string @default = null)
         {
             throw new NotImplementedException();
         }

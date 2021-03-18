@@ -21,6 +21,11 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
         /// Store data using open extensions on the Graph User.
         /// </summary>
         UserExtensions,
+
+        /// <summary>
+        /// Store data in files in the user's OneDrive AppRoot folder.
+        /// </summary>
+        OneDrive,
     }
 
     /// <summary>
@@ -69,16 +74,33 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
                 serializer = new JsonObjectSerializer();
             }
 
+            // TODO: Infuse unique identifier from Graph registration into the storage name.
+            string dataStoreName = "communityToolkit.roamingSettings";
+
             switch (dataStore)
             {
                 case RoamingDataStore.UserExtensions:
-                    // Determine the extension id value using app identity.
-                    string aumid = Windows.ApplicationModel.AppInfo.Current.AppUserModelId;
-                    var extensionId = "com.toolkit.roamingSettings." + aumid;
-                    DataStore = new UserExtensionDataStore(serializer, extensionId, userId, autoSync);
+                    DataStore = new UserExtensionDataStore(dataStoreName, userId, serializer);
                     break;
+
+                case RoamingDataStore.OneDrive:
+                    DataStore = new OneDriveDataStore(dataStoreName + ".json", serializer);
+                    break;
+
                 default:
                     throw new ArgumentOutOfRangeException(nameof(dataStore));
+            }
+
+            if (autoSync)
+            {
+                try
+                {
+                    DataStore.Sync();
+                }
+                catch
+                {
+                    // Sync may fail if the storage container does not yet exist.
+                }
             }
         }
 
@@ -112,10 +134,13 @@ namespace Microsoft.Toolkit.Graph.Helpers.RoamingSettings
         public T Read<T>(string key, T @default = default) => DataStore.Read<T>(key, @default);
 
         /// <inheritdoc />
-        public T Read<T>(string compositeKey, string key, T @default = default) => DataStore.Read<T>(compositeKey, key, @default);
+        public T Read<T>(string compositeKey, string key, T @default = default) => DataStore.Read(compositeKey, key, @default);
 
         /// <inheritdoc />
-        public Task<T> ReadFileAsync<T>(string filePath, T @default = default) => DataStore.ReadFileAsync<T>(filePath, @default);
+        public Task<T> ReadFileAsync<T>(string filePath, T @default = default) => DataStore.ReadFileAsync(filePath, @default);
+
+        /// <inheritdoc />
+        public Task<string> ReadFileAsync(string filePath, string @default = default) => DataStore.ReadFileAsync(filePath, @default);
 
         /// <inheritdoc />
         public void Save<T>(string key, T value) => DataStore.Save<T>(key, value);
