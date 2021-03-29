@@ -2,16 +2,16 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using CommunityToolkit.Net.Authentication;
+using CommunityToolkit.Uwp.Graph.Helpers.RoamingSettings;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
-using Microsoft.Toolkit.Graph.Helpers.RoamingSettings;
-using Microsoft.Toolkit.Graph.Providers;
 
-namespace SampleTest.Samples.RoamingSettings
+namespace SampleTest.Samples
 {
     public class RoamingSettingsViewModel : INotifyPropertyChanged
     {
@@ -101,7 +101,7 @@ namespace SampleTest.Samples.RoamingSettings
 
                 await _roamingSettings.Create();
                 
-                AdditionalData = new ObservableCollection<KeyValuePair<string, object>>(_roamingSettings.DataStore.Settings);
+                AdditionalData = new ObservableCollection<KeyValuePair<string, object>>(_roamingSettings.Cache);
 
                 KeyInputText = string.Empty;
                 ValueInputText = string.Empty;
@@ -138,9 +138,9 @@ namespace SampleTest.Samples.RoamingSettings
                 AdditionalData?.Clear();
 
                 await _roamingSettings.Sync();
-                if (_roamingSettings.DataStore.Settings != null)
+                if (_roamingSettings.Cache != null)
                 {
-                    AdditionalData = new ObservableCollection<KeyValuePair<string, object>>(_roamingSettings.DataStore.Settings);
+                    AdditionalData = new ObservableCollection<KeyValuePair<string, object>>(_roamingSettings.Cache);
                 }
             }
             catch (Exception e)
@@ -165,10 +165,9 @@ namespace SampleTest.Samples.RoamingSettings
         {
             try
             {
-                _roamingSettings = await RoamingSettingsHelper.CreateForCurrentUser();
+                ClearState();
 
-                KeyInputText = string.Empty;
-                ValueInputText = string.Empty;
+                _roamingSettings = await RoamingSettingsHelper.CreateForCurrentUser();
             }
             catch (Exception e)
             {
